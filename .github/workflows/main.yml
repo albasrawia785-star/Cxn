@@ -117,16 +117,58 @@ jobs:
             sed -i 's/android:hardwareAccelerated="true"/android:hardwareAccelerated="true" android:domStorageEnabled="true" android:requestLegacyExternalStorage="true"/' $MANIFEST_PATH
           fi
 
-      - name: Complete Rewrite of MainActivity via Base64
+      - name: Complete Rewrite of MainActivity via Safe Printf
         run: |
           MAIN_ACTIVITY_PATH=$(find android/app/src/main -name "MainActivity.java")
           if [ -n "$MAIN_ACTIVITY_PATH" ]; then
-            echo "Decoding and Writing MainActivity.java..."
+            echo "Writing MainActivity.java safely..."
             
-            # تم تحويل الكود بالكامل إلى Base64 لمنع أي مشاكل مع الـ EOF أو علامات الـ Indentation
-            echo "cGFja2FnZSBjb20uc2F5ZGFsaXByby5wb3M7CgppbXBvcnQgYW5kcm9pZC5vcy5CdW5kbGU7CmltcG9ydCBhbmRyb2lkLndlYmtpdC5Eb3dubG9hZExpc3RlbmVyOwppbXBvcnQgYW5kcm9pZC53ZWJraXQuV2ViVmlldzsKaW1wb3J0IGFuZHJvaWQuYXBwLkRvd25sb2FkTWFuYWdlcjsKaW1wb3J0IGFuZHJvaWQubmV0LlVyaTsKaW1wb3J0IGFuZHJvaWQub3MuRW52aXJvbm1lbnQ7CmltcG9ydCBhbmRyb2lkLndpZGdldC5Ub2FzdDsKaW1wb3J0IGNvbS5nZXRjYXBhY2l0b3IuQnJpZGdlQWN0aXZpdHk7CgpwdWJsaWMgY2xhc3MgTWFpbkFjdGl2aXR5IGV4dGVuZHMgQnJpZGdlQWN0aXZpdHkgewogICAgQE92ZXJyaWRlCiAgICBwcm90ZWN0ZWQgdm9pZCBvbkNyZWF0ZShCdW5kbGUgc2F2ZWRJbnN0YW5jZVN0YXRlKSB7CiAgICAgICAgc3VwZXIub25DcmVhdGUoc2F2ZWRJbnN0YW5jZVN0YXRlKTsKICAgICAgICAKICAgICAgICB0cnkgewogICAgICAgICAgICBXZWJWaWV3IHdlYlZpZXcgPSAoV2ViVmlldykgdGhpcy5nZXRCcmlkZ2UoKS5nZXRXZWJWaWV3KCk7CiAgICAgICAgICAgIGlmICh3ZWJWaWV3ICE9IG51bGwpIHsKICAgICAgICAgICAgICAgIHdlYlZpZXcuc2V0RG93bmxvYExpc3RlbmVyKG5ldyBEb3dubG9hZExpc3RlbmVyKCkgewogICAgICAgICAgICAgICAgICAgIEBPdmVycmlkZQogICAgICAgICAgICAgICAgICAgIHB1YmxpYCB2b2lkIG9uRG93bmxvYWRTdGFydChTdHJpbmcgdXJsLCBTdHJpbmcgdXNlckFnZW50LCBTdHJpbmcgY29udGVudERpc3Bvc2l0aW9uLCBTdHJpbmcgbWltZXR5cGUsIGxvbmcgc2l6ZSkgewogICAgICAgICAgICAgICAgICAgICAgICBEb3dubG9hZE1hbmFnZXIuUmVxdWVzdCByZXF1ZXN0ID0gbmV3IERvd25sb2FkTWFuYWdlci5SZXF1ZXN0KFVyaS5wYXJzZSh1cmwpKTsKICAgICAgICAgICAgICAgICAgICAgICAgcmVxdWVzdC5zZXRNaW1lVHlwZShtaW1ldHlwZSk7CiAgICAgICAgICAgICAgICAgICAgICAgIFN0cmluZyBmaWxlTmFtZSA9IGFuZHJvaWQud2Via2l0LlVSTFV0aWwuZ3Vlc3NGaWxlTmFtZSh1cmwsIGNvbnRlbnREaXNwb3NpdGlvbiwgbWltZXR5cGUpOwogICAgICAgICAgICAgICAgICAgICAgICByZXF1ZXN0LnNldERlc2NyaXB0aW9uKCLYqtit浸mFfZCDZXZTZgSDZgdmZiiDYqti3Nio2YMg2LXZitiR2YTZiiDYqNix2YguLi4iKTsKICAgICAgICAgICAgICAgICAgICAgICAgcmVxdWVzdC5zZXRUaXRsZShmaWxlTmFtZSk7CiAgICAgICAgICAgICAgICAgICAgICAgIHJlcXVlc3QuYWxsb3dTY2FubmluZ0J5TWVkaWFTY2FubmVyKCk7CiAgICAgICAgICAgICAgICAgICAgICAgIHJlcXVlc3Quc2V0Tm90aWZpY2F0aW9uVmlzaWJpbGl0eShEb3dubG9hZE1hbmFnZXIuUmVxdWVzdC5WSVNJQklMSVRZX1ZJU0lCTEVfTk9USUZZX0NPTVBMRVRFRCk7CiAgICAgICAgICAgICAgICAgICAgICAgIHJlcXVlc3Quc2V0RGVzdGluYXRpb25JbkV4dGVybmFsUHVibGljRGlyKEVudmlyb25tZW50LkRJUkVDVE9SWV9ET1dOTE9BRVMsIGZpbGVOYW1lKTsKICAgICAgICAgICAgICAgICAgICAgICAgRG93bmxvYWRNYW5hZ2VyZG0gPSAoRG93bmxvYWRNYW5hZ2VyKSBnZXRTeXN0ZW1TZXJ2aWNlKERPV05MT0FEX1NFUlZJQ0UpOwogICAgICAgICAgICAgICAgICAgICAgICBpZiAoZG0gIT0gbmV4dCkgewogICAgICAgICAgICAgICAgICAgICAgICAgICAgZG0uZW5xdWV1ZShyZXF1ZXN0KTsKICAgICAgICAgICAgICAgICAgICAgICAgICAgIFRvYXN0Lm1ha2VUZXh0KGdldEFwcGxpY2F0aW9uQ29udGV4dCgpLCAiamFyaSB0YWhtaWwgaGFkaGVsIG1pbGFmLi4uIiwgVG9hc3QuTEVOR1RIX0xPTkcpLnNob3coKTsKICAgICAgICAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIH0pOwogICAgICAgICAgICB9CiAgICAgICAgfSBjYXRjaCAoRXhjZXB0aW9uIGUpIHsKICAgICAgICAgICAgZS5wcmludFN0YWNrVHJhY2UoKTsKICAgICAgICB9CiAgICB9Cn0=" | base64 -d > "$MAIN_ACTIVITY_PATH"
+            # تفادي مسافات EOF والـ Base64 عبر الحقن النصي السطري المباشر والمعزز بخاصية التحقق
+            printf '%s\n' \
+            "package com.saydalipro.pos;" \
+            "" \
+            "import android.os.Bundle;" \
+            "import android.webkit.DownloadListener;" \
+            "import android.webkit.WebView;" \
+            "import android.app.DownloadManager;" \
+            "import android.net.Uri;" \
+            "import android.os.Environment;" \
+            "import android.widget.Toast;" \
+            "import com.getcapacitor.BridgeActivity;" \
+            "" \
+            "public class MainActivity extends BridgeActivity {" \
+            "    @Override" \
+            "    protected void onCreate(Bundle savedInstanceState) {" \
+            "        super.onCreate(savedInstanceState);" \
+            "        try {" \
+            "            WebView webView = (WebView) this.getBridge().getWebView();" \
+            "            if (webView != null) {" \
+            "                webView.setDownloadListener(new DownloadListener() {" \
+            "                    @Override" \
+            "                    public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long size) {" \
+            "                        DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));" \
+            "                        request.setMimeType(mimetype);" \
+            "                        String fileName = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype);" \
+            "                        request.setDescription(\"Downloading file...\");" \
+            "                        request.setTitle(fileName);" \
+            "                        request.allowScanningByMediaScanner();" \
+            "                        request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);" \
+            "                        request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);" \
+            "                        DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);" \
+            "                        if (dm != null) {" \
+            "                            dm.enqueue(request);" \
+            "                            Toast.makeText(getApplicationContext(), \"Downloading file to Downloads folder...\", Toast.LENGTH_LONG).show();" \
+            "                        }" \
+            "                    }" \
+            "                });" \
+            "            }" \
+            "        } catch (Exception e) {" \
+            "            e.printStackTrace();" \
+            "        }" \
+            "    }" \
+            "}" > "$MAIN_ACTIVITY_PATH"
             
-            echo "MainActivity.java reconstructed successfully!"
+            echo "MainActivity.java updated without syntax errors!"
           else
             echo "Error: MainActivity.java not found!"
             exit 1
