@@ -1,0 +1,166 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Pre-Clean Conflicting Configurations
+        run: |
+          rm -rf capacitor.config.ts capacitor.config.json
+
+      - name: Unzip Project Files
+        run: |
+          unzip "pos.zip--صيدلي-برو" -d temp_unzip || unzip *.zip -d temp_unzip || true
+          TARGET_DIR=$(find temp_unzip -name "package.json" -exec dirname {} \;)
+          if [ -n "$TARGET_DIR" ]; then
+            echo "Found project files in: $TARGET_DIR"
+            cp -r $TARGET_DIR/* .
+          else
+            echo "Error: package.json not found!"
+            exit 1
+          fi
+          rm -rf temp_unzip
+
+      - name: Inject Advanced Notification & Download Bridge into Web Code
+        run: |
+          INDEX_HTML=$(find . -name "index.html" -not -path "*/node_modules/*" -not -path "*/android/*" | head -n 1)
+          if [ -n "$INDEX_HTML" ]; then
+            echo "Creating Polyfill file..."
+            
+            # كتابة كود الجسر البرمي للإشعارات والتحميلات لتفادي القيود الافتراضية للـ WebView
+            cat << 'EOF' > polyfill.html
+            <script>
+              (function() {
+                // 1. حل مشكلة الإشعارات
+                window.Notification = function(title, options) {
+                  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+                    window.Capacitor.Plugins.LocalNotifications.schedule({
+                      notifications: [{ id: Math.floor(Math.random() * 10000), title: title, body: (options && options.body) || '' }]
+                    });
+                  }
+                };
+                window.Notification.permission = 'default';
+                
+                window.Notification.requestPermission = function() {
+                  return new Promise(function(resolve) {
+                    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+                      window.Capacitor.Plugins.LocalNotifications.requestPermissions().then(function(res) {
+                        var status = (res.display === 'granted') ? 'granted' : 'denied';
+                        window.Notification.permission = status;
+                        resolve(status);
+                        if(typeof window.dispatchEvent === 'function') {
+                          window.dispatchEvent(new Event('storage'));
+                        }
+                      }).catch(function() {
+                        window.Notification.permission = 'granted';
+                        resolve('granted');
+                      });
+                    } else {
+                      window.Notification.permission = 'granted';
+                      resolve('granted');
+                    }
+                  });
+                };
+              })();
+            </script>
+          EOF
+
+            echo "Injecting Intelligent Notification Bridge into $INDEX_HTML..."
+            awk '1; /<head>/ {system("cat polyfill.html")}' "$INDEX_HTML" > temp.html && mv temp.html "$INDEX_HTML"
+            rm polyfill.html
+          else
+            echo "Warning: index.html not found, skipping plugin injection."
+          fi
+
+      - name: Deep Clean Environment
+        run: |
+          rm -rf node_modules package-lock.json dist android
+          find . -name "capacitor.config.ts" -delete
+          find . -name "capacitor.config.json" -delete
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Dependencies
+        run: |
+          npm install --force
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Install Capacitor CLI, Core & Plugins
+        run: |
+          npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
+          npm install @capacitor/local-notifications@latest @capacitor/push-notifications@latest
+          # تثبيت حزمة إدارة الملفات لتمكين الـ WebView من حفظ التحميلات في الجهاز
+          npm install @capacitor/filesystem@latest
+
+      - name: Initialize Capacitor Android
+        run: |
+          npx cap init "Saydali Pro POS" "com.saydalipro.pos" --web-dir=dist
+          npx cap add android
+          npx cap sync android
+
+      - name: Advanced Permissions Fix (Notifications & Storage Downloads)
+        run: |
+          MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST_PATH" ]; then
+            echo "Injecting Android Manifest Permissions for Notifications and Downloads..."
+            
+            # حقن صلاحيات الإشعارات + صلاحيات الكتابة والقراءة من الذاكرة الخارجية لحفظ الملفات المحملة
+            sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />' $MANIFEST_PATH
+            
+            # تفعيل خيارات الذاكرة والتنزيلات في أندرويد
+            sed -i 's/android:hardwareAccelerated="true"/android:hardwareAccelerated="true" android:domStorageEnabled="true" android:requestLegacyExternalStorage="true"/' $MANIFEST_PATH
+          fi
+
+      - name: Configure Android WebView to Support File Downloads
+        run: |
+          # تعديل كود الـ Java لتوجيه ملفات التحميل من المتصفح الداخلي مباشرة إلى مجلد الـ Downloads بالهاتف
+          MAIN_ACTIVITY_PATH=$(find android/app/src/main -name "MainActivity.java")
+          if [ -n "$MAIN_ACTIVITY_PATH" ]; then
+            echo "Configuring MainActivity.java to support file downloads..."
+            
+            # تعديل برمي متقدم داخل الـ WebView لجعل أي ملف يتم تحميله يذهب فوراً لمجلد التنزيلات الرسمي للجهاز
+            sed -i '/public class MainActivity extends BridgeActivity/i import android.webkit.DownloadListener;\nimport android.webkit.WebView;\nimport android.app.DownloadManager;\nimport android.net.Uri;\nimport android.os.Environment;\nimport android.widget.Toast;' $MAIN_ACTIVITY_PATH
+            
+            # حقن دالة التحميل التلقائية في الـ onCreate الخاص بالتطبيق
+            sed -i '/this.init(savedInstanceState, /a \        WebView webView = (WebView) this.bridge.getWebView();\n        webView.setDownloadListener(new DownloadListener() {\n            @Override\n            public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {\n                DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));\n                request.setMimeType(mimetype);\n                String fileName = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype);\n                request.setDescription("تحميل ملف من تطبيق صيدلي برو...");\n                request.setTitle(fileName);\n                request.allowScanningByMediaScanner();\n                request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);\n                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);\n                DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);\n                dm.enqueue(request);\n                Toast.makeText(getApplicationContext(), "جاري تحميل الملف وضبطه في التنزيلات...", Toast.LENGTH_LONG).show();\n            }\n        });' $MAIN_ACTIVITY_PATH
+          fi
+
+      - name: Update Kotlin & Gradle Versions for Java 21
+        run: |
+          cd android
+          if [ -f "build.gradle" ]; then
+            sed -i 's/ext.kotlin_version = .*/ext.kotlin_version = "1.9.24"/g' build.gradle
+            sed -i 's/kotlin_version = .*/kotlin_version = "1.9.24"/g' build.gradle
+          fi
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+
+      - name: Build Android APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon -Dorg.gradle.project.android.useAndroidX=true
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Saydali-Pro-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
