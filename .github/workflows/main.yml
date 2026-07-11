@@ -30,17 +30,14 @@ jobs:
           fi
           rm -rf temp_unzip
 
-      - name: Inject Advanced Notification & Download Bridge into Web Code
+      - name: Inject Advanced Notification Bridge into Web Code
         run: |
           INDEX_HTML=$(find . -name "index.html" -not -path "*/node_modules/*" -not -path "*/android/*" | head -n 1)
           if [ -n "$INDEX_HTML" ]; then
             echo "Creating Polyfill file..."
-            
-            # كتابة كود الجسر البرمي للإشعارات والتحميلات لتفادي القيود الافتراضية للـ WebView
             cat << 'EOF' > polyfill.html
             <script>
               (function() {
-                // 1. حل مشكلة الإشعارات
                 window.Notification = function(title, options) {
                   if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
                     window.Capacitor.Plugins.LocalNotifications.schedule({
@@ -103,7 +100,6 @@ jobs:
         run: |
           npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
           npm install @capacitor/local-notifications@latest @capacitor/push-notifications@latest
-          # تثبيت حزمة إدارة الملفات لتمكين الـ WebView من حفظ التحميلات في الجهاز
           npm install @capacitor/filesystem@latest
 
       - name: Initialize Capacitor Android
@@ -117,26 +113,66 @@ jobs:
           MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST_PATH" ]; then
             echo "Injecting Android Manifest Permissions for Notifications and Downloads..."
-            
-            # حقن صلاحيات الإشعارات + صلاحيات الكتابة والقراءة من الذاكرة الخارجية لحفظ الملفات المحملة
             sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />' $MANIFEST_PATH
-            
-            # تفعيل خيارات الذاكرة والتنزيلات في أندرويد
             sed -i 's/android:hardwareAccelerated="true"/android:hardwareAccelerated="true" android:domStorageEnabled="true" android:requestLegacyExternalStorage="true"/' $MANIFEST_PATH
           fi
 
-      - name: Configure Android WebView to Support File Downloads
+      - name: Complete Rewrite of MainActivity for Absolute Download Support
         run: |
-          # تعديل كود الـ Java لتوجيه ملفات التحميل من المتصفح الداخلي مباشرة إلى مجلد الـ Downloads بالهاتف
           MAIN_ACTIVITY_PATH=$(find android/app/src/main -name "MainActivity.java")
           if [ -n "$MAIN_ACTIVITY_PATH" ]; then
-            echo "Configuring MainActivity.java to support file downloads..."
+            echo "Rewriting MainActivity.java to bundle Native Download Listener..."
             
-            # تعديل برمي متقدم داخل الـ WebView لجعل أي ملف يتم تحميله يذهب فوراً لمجلد التنزيلات الرسمي للجهاز
-            sed -i '/public class MainActivity extends BridgeActivity/i import android.webkit.DownloadListener;\nimport android.webkit.WebView;\nimport android.app.DownloadManager;\nimport android.net.Uri;\nimport android.os.Environment;\nimport android.widget.Toast;' $MAIN_ACTIVITY_PATH
-            
-            # حقن دالة التحميل التلقائية في الـ onCreate الخاص بالتطبيق
-            sed -i '/this.init(savedInstanceState, /a \        WebView webView = (WebView) this.bridge.getWebView();\n        webView.setDownloadListener(new DownloadListener() {\n            @Override\n            public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {\n                DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));\n                request.setMimeType(mimetype);\n                String fileName = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype);\n                request.setDescription("تحميل ملف من تطبيق صيدلي برو...");\n                request.setTitle(fileName);\n                request.allowScanningByMediaScanner();\n                request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);\n                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);\n                DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);\n                dm.enqueue(request);\n                Toast.makeText(getApplicationContext(), "جاري تحميل الملف وضبطه في التنزيلات...", Toast.LENGTH_LONG).show();\n            }\n        });' $MAIN_ACTIVITY_PATH
+            cat << 'EOF' > "$MAIN_ACTIVITY_PATH"
+            package com.saydalipro.pos;
+
+            import android.os.Bundle;
+            import android.webkit.DownloadListener;
+            import android.webkit.WebView;
+            import android.app.DownloadManager;
+            import android.net.Uri;
+            import android.os.Environment;
+            import android.widget.Toast;
+            import com.getcapacitor.BridgeActivity;
+
+            public class MainActivity extends BridgeActivity {
+                @Override
+                protected void onCreate(Bundle savedInstanceState) {
+                    super.onCreate(savedInstanceState);
+                    
+                    // إعداد مستمع التحميلات فور تشغيل محرك كاباسيتور
+                    try {
+                        WebView webView = (WebView) this.getBridge().getWebView();
+                        if (webView != null) {
+                            webView.setDownloadListener(new DownloadListener() {
+                                @Override
+                                public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {
+                                    DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+                                    request.setMimeType(mimetype);
+                                    String fileName = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype);
+                                    request.setDescription("تحميل ملف من تطبيق صيدلي برو...");
+                                    request.setTitle(fileName);
+                                    request.allowScanningByMediaScanner();
+                                    request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                                    request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);
+                                    DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+                                    if (dm != null) {
+                                        dm.enqueue(request);
+                                        Toast.makeText(getApplicationContext(), "جاري تحميل الملف وحفظه في مجلد التنزيلات (Downloads)...", Toast.LENGTH_LONG).show();
+                                    }
+                                }
+                            });
+                        }
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+            EOF
+            echo "MainActivity.java rewritten successfully!"
+          else
+            echo "Error: MainActivity.java not found!"
+            exit 1
           fi
 
       - name: Update Kotlin & Gradle Versions for Java 21
